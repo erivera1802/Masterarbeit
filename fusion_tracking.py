@@ -52,157 +52,164 @@ def gstreamer_pipeline(capture_width=1280, capture_height=720, display_width=128
             'video/x-raw, format=(string)BGR ! appsink' % (
             capture_width, capture_height, framerate, flip_method, display_width, display_height))
 
-# Take the boxes, supress the non_max, draw the boxes and show the images
-def draw_and_show(detected_boxes,pil_im, count):
-    global first_time
-    filtered_boxes = non_max_suppression(detected_boxes,
-                                         confidence_threshold=FLAGS.conf_threshold,
-                                         iou_threshold=FLAGS.iou_threshold)
-    draw_save_boxes(filtered_boxes, pil_im, classes, (FLAGS.size, FLAGS.size), True, count)
-    img = np.array(pil_im)
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    cv2.imshow('CSI Camera', img)
 
-# Process every detected box, that means: Draw the boxes in the images, and create and update tracked objects
-def draw_save_boxes(boxes, img, cls_names, detection_size, is_letter_box_image, count):
-    draw = ImageDraw.Draw(img)
-    global first_time
-    global consecutive
-    # if no object is detected
-    if not bool(boxes.items()):
-        print('0,0,0,0,'+str(count))
-        f.write('0,0,0,0,0,'+str(count)+'\n')
-    # For every detected box from all clases
-    for cls, bboxs in boxes.items():
-        color = tuple(np.random.randint(0, 256, 3))
+# Class defining the tracking algorithm and the necessary variables
+class TrackingAlgorithm:
 
-        for box, score in bboxs:
-            # Box processing, changing from Yolo format
-            box = convert_to_original_size(box, np.array(detection_size),
-                                           np.array(img.size),
-                                           is_letter_box_image)
-            # Create and update tracking objects from the boxes
-            tracking_objects(box)
-            # Draw boxes and names
-            draw.rectangle(box, outline=color)
-            draw.text(box[:2], '{} {:.2f}%'.format(
-                cls_names[cls], score * 100), fill=color)
-    # For all detected objects
-    if objects:
-        for key in objects.keys():
-            # r is the probability of existence, and it determines the radius of the circle
-            r = update(key)
-            draw.ellipse((objects[key]['X'] - r, objects[key]['Y'] - r, objects[key]['X'] + r, objects[key]['Y'] + r),
-                         fill=(255, 0, 0, 255))
-# Update the probability of existence of an object through a Binary Bayes Filter
-def update(key):
-    global objects
+    def __init__(self):
+        # Iteration, necessary to asign an iteration to the data
+        self.count = 0
 
-    # If not detected, probability of existence of an object is 0.3
-    sensor = 0.3
+        # Is the first time an object is recognized?
+        self.first_time = True
 
-    # If detected, probability of existence of an object is 0.7
-    if objects[key]['Update']:
-        sensor = 0.7
+        # Variable to add new objects
+        self.consecutive = 0
+        # Dictionary with recognized objects
+        self.objects = dict()
 
-    # Binary Bayes Filter
-    l = np.log(sensor / (1 - sensor))
-    l_past = np.log(objects[key]['Prob'] / (1 - objects[key]['Prob']))
-    L = l + l_past
+    # Take the boxes, supress the non_max, draw the boxes and show the images
+    def draw_and_show(self,detected_boxes,pil_im):
+        filtered_boxes = non_max_suppression(detected_boxes,
+                                             confidence_threshold=FLAGS.conf_threshold,
+                                             iou_threshold=FLAGS.iou_threshold)
+        self.draw_boxes_and_objects(filtered_boxes, pil_im, classes, (FLAGS.size, FLAGS.size), True)
+        img = np.array(pil_im)
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        cv2.imshow('CSI Camera', img)
 
-    # Corrected the 'Static' asumption
-    if np.abs(L) > 5:
-        L = 5 * np.sign(L)
+    # Process every detected box, that means: Draw the boxes in the images, and create and update tracked objects
+    def draw_boxes_and_objects(self,boxes, img, cls_names, detection_size, is_letter_box_image):
+        draw = ImageDraw.Draw(img)
 
-    # Get the probability of existence of the box
-    P = 1 - 1 / (1 + np.exp(L))
-    print(P, L, l, l_past)
+        # For every detected box from all clases
+        for cls, bboxs in boxes.items():
+            color = tuple(np.random.randint(0, 256, 3))
 
-    # Radius of the ellipse
-    r = 15 * P
+            for box, score in bboxs:
+                # Box processing, changing from Yolo format
+                box = convert_to_original_size(box, np.array(detection_size),
+                                               np.array(img.size),
+                                               is_letter_box_image)
+                # Create and update tracking objects from the boxes
+                self.tracking_objects(box)
+                # Draw boxes and names
+                draw.rectangle(box, outline=color)
+                draw.text(box[:2], '{} {:.2f}%'.format(
+                    cls_names[cls], score * 100), fill=color)
+        # For all detected objects
+        if self.objects:
+            for key in self.objects.keys():
+                # r is the probability of existence, and it determines the radius of the circle
+                r = self.update(key)
+                draw.ellipse((self.objects[key]['X'] - r, self.objects[key]['Y'] - r, self.objects[key]['X'] + r, self.objects[key]['Y'] + r),
+                             fill=(255, 0, 0, 255))
+    # Update the probability of existence of an object through a Binary Bayes Filter
+    def update(self,key):
 
-    # Update object probability
-    objects[key]['Prob'] = P
+        # If not detected, probability of existence of an object is 0.3
+        sensor = 0.3
 
-    # Reset 'Update' parameter of all the actual objects
-    objects[key]['Update'] = False
-    return r
+        # If detected, probability of existence of an object is 0.7
+        if self.objects[key]['Update']:
+            sensor = 0.7
 
-def tracking_objects(box):
-    global objects
-    global first_time
-    global consecutive
+        # Binary Bayes Filter
+        l = np.log(sensor / (1 - sensor))
+        l_past = np.log(self.objects[key]['Prob'] / (1 - self.objects[key]['Prob']))
+        L = l + l_past
 
-    # Size of the gate to accept a position into an existent object
-    gate = 300
+        # Corrected the 'Static' asumption
+        if np.abs(L) > 5:
+            L = 5 * np.sign(L)
 
-    # Dictionary for one object
-    # Features:
-    # X: Position in X
-    # Y: Position in Y
-    # Prob: Existence probability
-    # Update: Was the object detected in the actual iteration?
+        # Get the probability of existence of the box
+        P = 1 - 1 / (1 + np.exp(L))
+        print(P, L, l, l_past)
 
-    obj = dict()
-    # Change coordinates from x0, y0, x1, y1 to x, y, width, height
-    x, y = change_coordinates(box)
+        # Radius of the ellipse
+        r = 15 * P
 
-    # If it is the first time, a new object has to initialize the dictionary
-    if  first_time:
-        first_time = False
-        obj['X'] = x
-        obj['Y'] = y
-        obj['Prob'] = 0.5
-        obj['Update'] = True
+        # Update object probability
+        self.objects[key]['Prob'] = P
 
-        # Append the object to the dictionary in the 'consecutive' position
-        objects[consecutive] = obj
-        consecutive = consecutive + 1
+        # Reset 'Update' parameter of all the actual objects
+        self.objects[key]['Update'] = False
+        return r
 
-    else:
-        for key in objects.keys():
-            actualX = x
-            actualY = y
+    def tracking_objects(self,box):
 
-            # Calculate the distance between the new measurement and all the saved objects
-            distance = np.sqrt((objects[key]['X'] - actualX) ** 2 + (objects[key]['Y'] - actualY) ** 2)
 
-            # If the distance is smaller than the gate, the measurement is the new position of the object
-            if distance < gate:
-                objects[key]['X'] = actualX
-                objects[key]['Y'] = actualY
-                objects[key]['Update'] = True
-                newObject = False
-                break
+        # Size of the gate to accept a position into an existent object
+        gate = 300
 
-            # If not, a new object must be created
-            else:
-                newObject = True
+        # Dictionary for one object
+        # Features:
+        # X: Position in X
+        # Y: Position in Y
+        # Prob: Existence probability
+        # Update: Was the object detected in the actual iteration?
 
-        # Create a new object with the position of the actual measurement
-        if newObject:
+        obj = dict()
+        # Change coordinates from x0, y0, x1, y1 to x, y, width, height
+        x, y = self.change_coordinates(box)
+
+        # If it is the first time, a new object has to initialize the dictionary
+        if  self.first_time:
+            self.first_time = False
             obj['X'] = x
             obj['Y'] = y
             obj['Prob'] = 0.5
             obj['Update'] = True
-            objects[consecutive] = obj
-            consecutive = consecutive + 1
 
-# Change coordinates from x0, y0, x1, y1 to x, y, width, height
-def change_coordinates(box):
-    width = box[2]-box[0]
-    height = box[3]-box[1]
-    x = box[0]+width/2
-    y = box[1]+height/2
-    return x,y
+            # Append the object to the dictionary in the 'consecutive' position
+            self.objects[self.consecutive] = obj
+            self.consecutive = self.consecutive + 1
 
-# Function to change from cv2 to pil and resizing
-def prepare_image(img):
-    cv2_im = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    pil_im = Image.fromarray(cv2_im)
-    img_resized = letter_box_image(pil_im, FLAGS.size, FLAGS.size, 128)
-    img_resized = img_resized.astype(np.float32)
-    return img_resized,pil_im
+        else:
+            for key in self.objects.keys():
+                actualX = x
+                actualY = y
+
+                # Calculate the distance between the new measurement and all the saved objects
+                distance = np.sqrt((self.objects[key]['X'] - actualX) ** 2 + (self.objects[key]['Y'] - actualY) ** 2)
+
+                # If the distance is smaller than the gate, the measurement is the new position of the object
+                if distance < gate:
+                    self.objects[key]['X'] = actualX
+                    self.objects[key]['Y'] = actualY
+                    self.objects[key]['Update'] = True
+                    newObject = False
+                    break
+
+                # If not, a new object must be created
+                else:
+                    newObject = True
+
+            # Create a new object with the position of the actual measurement
+            if newObject:
+                obj['X'] = x
+                obj['Y'] = y
+                obj['Prob'] = 0.5
+                obj['Update'] = True
+                self.objects[self.consecutive] = obj
+                self.consecutive = self.consecutive + 1
+
+    # Change coordinates from x0, y0, x1, y1 to x, y, width, height
+    def change_coordinates(self,box):
+        width = box[2]-box[0]
+        height = box[3]-box[1]
+        x = box[0]+width/2
+        y = box[1]+height/2
+        return x,y
+
+    # Function to change from cv2 to pil and resizing
+    def prepare_image(self,img):
+        cv2_im = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        pil_im = Image.fromarray(cv2_im)
+        img_resized = letter_box_image(pil_im, FLAGS.size, FLAGS.size, 128)
+        img_resized = img_resized.astype(np.float32)
+        return img_resized,pil_im
 
 
 # Load the classes file and the graph
@@ -233,43 +240,37 @@ tf_sess = tf.Session(graph=frozenGraph,config=config)
 boxes, inputs = get_boxes_and_inputs_pb(frozenGraph)
 
 # Saving data to debug ant test algorithms
-f = open('data.txt','w')
-f.write('X0,Y0,X1,Y1,Indice\n')
+#f = open('data.txt','w')
+#f.write('X0,Y0,X1,Y1,Indice\n')
 
-# Iteration
-count = 0
-
-# Was an object already recognized?
-first_time = True
-
-# Variable to add new objects
-consecutive = 0
-
-# Dictionary with recognized objects
-objects = dict()
+tracker = TrackingAlgorithm()
 
 # While you get something from the camera
 while cv2.getWindowProperty('CSI Camera', 0) >= 0:
     ret_val, img = cap.read()
 
+
     # Prepare the image
     num_rows, num_cols = img.shape[:2]
     rotation_matrix = cv2.getRotationMatrix2D((num_cols / 2, num_rows / 2), 180, 1)
     img = cv2.warpAffine(img, rotation_matrix, (num_cols, num_rows))
-    img_resized, pil_im = prepare_image(img)
+    img_resized, pil_im = tracker.prepare_image(img)
 
     # Run the network
     detected_boxes = tf_sess.run(boxes, feed_dict={inputs: [img_resized]})
 
     # Show the detected image and process tracking
-    draw_and_show(detected_boxes,pil_im, count)
-    count = count + 1
+    tracker.draw_and_show(detected_boxes,pil_im)
+    tracker.count = tracker.count + 1
+
     # Check if the window should be closed
     keyCode = cv2.waitKey(30) & 0xff
+
     # Stop the program on the ESC key
     if keyCode == 27:
         break
         cap.release()
         cv2.destroyAllWindows()
+
 # Close the tf Session
 tf_sess.close()
