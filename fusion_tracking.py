@@ -65,6 +65,8 @@ class TrackingAlgorithm:
 
         # Variable to add new objects
         self.consecutive = 0
+        self.discarded=[]
+
         # Dictionary with recognized objects
         self.objects = dict()
 
@@ -81,7 +83,8 @@ class TrackingAlgorithm:
     # Process every detected box, that means: Draw the boxes in the images, and create and update tracked objects
     def draw_boxes_and_objects(self,boxes, img, cls_names, detection_size, is_letter_box_image):
         draw = ImageDraw.Draw(img)
-
+        if not self.objects:
+            self.first_time = True
         # For every detected box from all clases
         for cls, bboxs in boxes.items():
             color = tuple(np.random.randint(0, 256, 3))
@@ -102,9 +105,16 @@ class TrackingAlgorithm:
             for key in self.objects.keys():
                 # r is the probability of existence, and it determines the radius of the circle
                 r = self.update(key)
+                print(key)
                 draw.ellipse((self.objects[key]['X'] - r, self.objects[key]['Y'] - r, self.objects[key]['X'] + r, self.objects[key]['Y'] + r),
                              fill=(255, 0, 0, 255))
-    # Update the probability of existence of an object through a Binary Bayes Filter
+                #if self.objects[key]['Prob'] < 0.2:
+                #    del self.objects[key]
+                #    self.discarded.append(key)
+            for key in [key for key in self.objects if self.objects[key]['Prob'] < 0.3]:
+                del self.objects[key]
+                self.discarded.append(key)
+            # Update the probability of existence of an object through a Binary Bayes Filter
     def update(self,key):
 
         # If not detected, probability of existence of an object is 0.3
@@ -125,7 +135,7 @@ class TrackingAlgorithm:
 
         # Get the probability of existence of the box
         P = 1 - 1 / (1 + np.exp(L))
-        print(P, L, l, l_past)
+        #print(P, L, l, l_past)
 
         # Radius of the ellipse
         r = 15 * P
@@ -163,8 +173,14 @@ class TrackingAlgorithm:
             obj['Update'] = True
 
             # Append the object to the dictionary in the 'consecutive' position
-            self.objects[self.consecutive] = obj
-            self.consecutive = self.consecutive + 1
+            #self.objects[self.consecutive] = obj
+            #self.consecutive = self.consecutive + 1
+            if not self.discarded:
+                self.objects[self.consecutive] = obj
+                self.consecutive = self.consecutive + 1
+            else:
+                index = self.discarded.pop(0)
+                self.objects[index] = obj
 
         else:
             for key in self.objects.keys():
@@ -192,8 +208,12 @@ class TrackingAlgorithm:
                 obj['Y'] = y
                 obj['Prob'] = 0.5
                 obj['Update'] = True
-                self.objects[self.consecutive] = obj
-                self.consecutive = self.consecutive + 1
+                if not self.discarded:
+                    self.objects[self.consecutive] = obj
+                    self.consecutive = self.consecutive + 1
+                else:
+                    index = self.discarded.pop(0)
+                    self.objects[index] = obj
 
     # Change coordinates from x0, y0, x1, y1 to x, y, width, height
     def change_coordinates(self,box):
