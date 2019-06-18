@@ -97,9 +97,9 @@ class TrackingAlgorithm:
                 # Create and update tracking objects from the boxes
                 self.tracking_objects(box)
                 # Draw boxes and names
-                draw.rectangle(box, outline=color)
+                draw.rectangle(box, outline=colors_array[cls])
                 draw.text(box[:2], '{} {:.2f}%'.format(
-                    cls_names[cls], score * 100), fill=color)
+                    cls_names[cls], score * 100), fill=colors_array[cls])
         # For all detected objects
         if self.objects:
             for key in self.objects.keys():
@@ -231,10 +231,17 @@ class TrackingAlgorithm:
         img_resized = img_resized.astype(np.float32)
         return img_resized,pil_im
 
+def colors(classes):
+    farbe =dict()
+    for i,classe in enumerate(classes):
+        farbe[i] = tuple(np.random.randint(0, 256, 3))
+    return farbe
 
 # Load the classes file and the graph
 classes = load_coco_names(FLAGS.class_names)
 frozenGraph = load_graph(FLAGS.frozen_model)
+
+colors_array = colors(classes)
 
 # Initialize the pipeline for the camera
 # To flip the image, modify the flip_method parameter (0 and 2 are the most common)
