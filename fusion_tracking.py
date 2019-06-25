@@ -70,6 +70,10 @@ class TrackingAlgorithm:
         # Dictionary with recognized objects
         self.objects = dict()
 
+        # Initialize object to save video
+        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+        self.writeVideo = cv2.VideoWriter('output.avi', fourcc, 15.0, (int(cap.get(3)), int(cap.get(4))))
+
     # Take the boxes, supress the non_max, draw the boxes and show the images
     def draw_and_show(self,detected_boxes,pil_im):
         filtered_boxes = non_max_suppression(detected_boxes,
@@ -79,6 +83,7 @@ class TrackingAlgorithm:
         img = np.array(pil_im)
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         cv2.imshow('CSI Camera', img)
+        self.writeVideo.write(img)
 
     # Process every detected box, that means: Draw the boxes in the images, and create and update tracked objects
     def draw_boxes_and_objects(self,boxes, img, cls_names, detection_size, is_letter_box_image):
@@ -296,6 +301,7 @@ while cv2.getWindowProperty('CSI Camera', 0) >= 0:
     # Stop the program on the ESC key
     if keyCode == 27:
         break
+        tracker.writeVideo.release()
         cap.release()
         cv2.destroyAllWindows()
 
