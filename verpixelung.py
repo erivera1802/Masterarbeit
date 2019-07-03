@@ -7,7 +7,7 @@ import yolo_v3
 import yolo_v3_tiny
 from utils import load_coco_names, draw_boxes, get_boxes_and_inputs, get_boxes_and_inputs_pb, non_max_suppression, \
                   load_graph, letter_box_image, convert_to_original_size
-from PIL import ImageDraw, Image
+from PIL import ImageDraw, Image, ImageFilter
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -71,9 +71,9 @@ class TrackingAlgorithm:
         self.objects = dict()
 
         # Initialize object to save video
-        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-        self.writeVideo = cv2.VideoWriter('output.avi', fourcc, 15.0, (int(cap.get(3)), int(cap.get(4))))
-        self.writeVideo2 = cv2.VideoWriter('output2.avi', fourcc, 15.0, (int(cap.get(3)), int(cap.get(4))))
+        fourcc = cv2.VideoWriter_fourcc(*'MP4V')
+        self.writeVideo = cv2.VideoWriter('output.mp4', fourcc, 15.0, (int(cap.get(3)), int(cap.get(4))))
+        self.writeVideo2 = cv2.VideoWriter('output2.mp4', fourcc, 15.0, (int(cap.get(3)), int(cap.get(4))))
         self.personBox = []
         self.personClass = 0
     # Take the boxes, supress the non_max, draw the boxes and show the images
@@ -84,7 +84,7 @@ class TrackingAlgorithm:
         self.draw_boxes_and_objects(filtered_boxes, pil_im, classes, (FLAGS.size, FLAGS.size), True)
         img = np.array(pil_im)
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        self.writeVideo2.write(img)
+        #self.writeVideo2.write(img)
         if len(self.personBox)>0:
             y1 = int(self.personBox[0])
             y2 = int(self.personBox[1])
@@ -92,14 +92,15 @@ class TrackingAlgorithm:
             x2 = int(self.personBox[3])
             if y1>0 and y2>0 and x1>0 and x2>0:
                 print(x1,x2,y1,y2)
-                img[y2:x2, y1:x1] = cv2.blur(img[y2:x2, y1:x1], (23, 23))
+                #img[y2:x2, y1:x1] = cv2.blur(img[y2:x2, y1:x1], (23, 23))
                 y = 460
                 x = 1020
                 h = 50
                 w = 50
                 #img[y:y + h, x:x + w] = cv2.blur(img[y:y + h, x:x + w], (23, 23))
         cv2.imshow('CSI Camera', img)
-        self.writeVideo.write(img)
+        if  self.count%5 ==0:
+            self.writeVideo.write(img)
 
     # Process every detected box, that means: Draw the boxes in the images, and create and update tracked objects
     def draw_boxes_and_objects(self,boxes, img, cls_names, detection_size, is_letter_box_image):
@@ -115,128 +116,11 @@ class TrackingAlgorithm:
                 box = convert_to_original_size(box, np.array(detection_size),
                                                np.array(img.size),
                                                is_letter_box_image)
-                # Create and update tracking objects from the boxes
-                self.tracking_objects(box)
                 # Draw boxes and names
-                draw.rectangle(box, outline=colors_array[cls])
-                draw.text(box[:2], '{} {:.2f}%'.format(
-                    cls_names[cls], score * 100), fill=colors_array[cls])
-                self.personBox = box
-                print(box)
-        # For all detected objects
-        if self.objects:
-            for key in self.objects.keys():
-                # r is the probability of existence, and it determines the radius of the circle
-                r = self.update(key)
-                print(key)
-                draw.ellipse((self.objects[key]['X'] - r, self.objects[key]['Y'] - r, self.objects[key]['X'] + r, self.objects[key]['Y'] + r),
-                             fill=(255, 0, 0, 255))
-                #if self.objects[key]['Prob'] < 0.2:
-                #    del self.objects[key]
-                #    self.discarded.append(key)
-            for key in [key for key in self.objects if self.objects[key]['Prob'] < 0.3]:
-                del self.objects[key]
-                self.discarded.append(key)
-            # Update the probability of existence of an object through a Binary Bayes Filter
-    def update(self,key):
-
-        # If not detected, probability of existence of an object is 0.3
-        sensor = 0.3
-
-        # If detected, probability of existence of an object is 0.7
-        if self.objects[key]['Update']:
-            sensor = 0.7
-
-        # Binary Bayes Filter
-        l = np.log(sensor / (1 - sensor))
-        l_past = np.log(self.objects[key]['Prob'] / (1 - self.objects[key]['Prob']))
-        L = l + l_past
-
-        # Corrected the 'Static' asumption
-        if np.abs(L) > 5:
-            L = 5 * np.sign(L)
-
-        # Get the probability of existence of the box
-        P = 1 - 1 / (1 + np.exp(L))
-        #print(P, L, l, l_past)
-
-        # Radius of the ellipse
-        r = 15 * P
-
-        # Update object probability
-        self.objects[key]['Prob'] = P
-
-        # Reset 'Update' parameter of all the actual objects
-        self.objects[key]['Update'] = False
-        return r
-
-    def tracking_objects(self,box):
+                if cls ==0:
+                    draw.rectangle(box, outline=colors_array[cls],fill=(0,0,0))
 
 
-        # Size of the gate to accept a position into an existent object
-        gate = 300
-
-        # Dictionary for one object
-        # Features:
-        # X: Position in X
-        # Y: Position in Y
-        # Prob: Existence probability
-        # Update: Was the object detected in the actual iteration?
-
-        obj = dict()
-        # Change coordinates from x0, y0, x1, y1 to x, y, width, height
-        x, y = self.change_coordinates(box)
-
-        # If it is the first time, a new object has to initialize the dictionary
-        if  self.first_time:
-            self.first_time = False
-            obj['X'] = x
-            obj['Y'] = y
-            obj['Prob'] = 0.5
-            obj['Update'] = True
-
-            # Append the object to the dictionary in the 'consecutive' position
-            #self.objects[self.consecutive] = obj
-            #self.consecutive = self.consecutive + 1
-            if not self.discarded:
-                self.objects[self.consecutive] = obj
-                self.consecutive = self.consecutive + 1
-            else:
-                index = self.discarded.pop(0)
-                self.objects[index] = obj
-
-        else:
-            for key in self.objects.keys():
-                actualX = x
-                actualY = y
-
-                # Calculate the distance between the new measurement and all the saved objects
-                distance = np.sqrt((self.objects[key]['X'] - actualX) ** 2 + (self.objects[key]['Y'] - actualY) ** 2)
-
-                # If the distance is smaller than the gate, the measurement is the new position of the object
-                if distance < gate:
-                    self.objects[key]['X'] = actualX
-                    self.objects[key]['Y'] = actualY
-                    self.objects[key]['Update'] = True
-                    newObject = False
-                    break
-
-                # If not, a new object must be created
-                else:
-                    newObject = True
-
-            # Create a new object with the position of the actual measurement
-            if newObject:
-                obj['X'] = x
-                obj['Y'] = y
-                obj['Prob'] = 0.5
-                obj['Update'] = True
-                if not self.discarded:
-                    self.objects[self.consecutive] = obj
-                    self.consecutive = self.consecutive + 1
-                else:
-                    index = self.discarded.pop(0)
-                    self.objects[index] = obj
 
     # Change coordinates from x0, y0, x1, y1 to x, y, width, height
     def change_coordinates(self,box):
