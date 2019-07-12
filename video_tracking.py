@@ -1,6 +1,7 @@
 import tensorflow as tf
 import cv2
 import numpy as np
+from numpy.linalg import inv
 from PIL import Image
 import time
 import yolo_v3
@@ -70,6 +71,14 @@ class TrackingAlgorithm:
         # Dictionary with recognized objects
         self.objects = dict()
 
+        # Kalman filter
+        # Time difference
+        self.dt = 0.2
+        self.A = np.array([[1,0,self.dt,0],[0,1,0,self.dt],[0,0,1,0],[0,0,0,1]])
+        self.P0 = 1*np.eye(4)
+        self.Q = np.array([[1,0,0,0],[0,1,0,0],[0,0,10,0],[0,0,0,10]])
+        self.H = np.array([[1, 0, 0, 0], [0, 1, 0, 0]])
+        self.R = 0.1*np.eye(2)
     # Take the boxes, supress the non_max, draw the boxes and show the images
     def draw_and_show(self,detected_boxes,pil_im):
         filtered_boxes = non_max_suppression(detected_boxes,
@@ -105,12 +114,27 @@ class TrackingAlgorithm:
             for key in self.objects.keys():
                 # r is the probability of existence, and it determines the radius of the circle
                 r = self.update(key)
-                print(key)
-                draw.ellipse((self.objects[key]['X'] - r, self.objects[key]['Y'] - r, self.objects[key]['X'] + r, self.objects[key]['Y'] + r),
-                             fill=(255, 0, 0, 255))
+                gate = 50
+                #(key)
+                #draw.ellipse((self.objects[key]['X'] - r, self.objects[key]['Y'] - r, self.objects[key]['X'] + r, self.objects[key]['Y'] + r),
+                #             fill=(255, 0, 0, 255))
+                if self.objects[key]['Update']:
+                    draw.ellipse((self.objects[key]['State'][0] - r, self.objects[key]['State'][1] - r, self.objects[key]['State'][0] + r,
+                                  self.objects[key]['State'][1] + r),
+                                 fill=(255, 0, 0, 255))
+                else :
+                    draw.ellipse((self.objects[key]['State'][0] - r, self.objects[key]['State'][1] - r, self.objects[key]['State'][0] + r,
+                                  self.objects[key]['State'][1] + r),
+                                 fill=(255, 255, 0, 255))
+                    draw.ellipse((self.objects[key]['State'][0] - gate, self.objects[key]['State'][1] - gate,
+                                  self.objects[key]['State'][0] + gate,
+                                  self.objects[key]['State'][1] + gate))
+                #print(len(self.objects),self.objects[key]['Update'])
                 #if self.objects[key]['Prob'] < 0.2:
                 #    del self.objects[key]
                 #    self.discarded.append(key)
+                # Reset 'Update' parameter of all the actual objects
+                self.objects[key]['Update'] = False
             for key in [key for key in self.objects if self.objects[key]['Prob'] < 0.3]:
                 del self.objects[key]
                 self.discarded.append(key)
@@ -123,7 +147,16 @@ class TrackingAlgorithm:
         # If detected, probability of existence of an object is 0.7
         if self.objects[key]['Update']:
             sensor = 0.7
-
+        if not self.objects[key]['Update']:
+            self.objects[key]['State'], self.objects[key]['P'] = self.predictKalman(self.objects[key]['State'],
+                                                                                    self.objects[key]['P'], self.A,
+                                                                                    self.Q)
+        #     self.objects[key]['State'], self.objects[key]['P'] = self.predictKalman(self.objects[key]['State'], self.objects[key]['P'],
+        #                                                                         self.A, self.Q)
+        #     self.objects[key]['X'] = self.objects[key]['State'][0]
+        #     self.objects[key]['Y'] = self.objects[key]['State'][1]
+        #     self.objects[key]['vX'] = self.objects[key]['State'][2]
+        #     self.objects[key]['vY'] = self.objects[key]['State'][3]
         # Binary Bayes Filter
         l = np.log(sensor / (1 - sensor))
         l_past = np.log(self.objects[key]['Prob'] / (1 - self.objects[key]['Prob']))
@@ -144,14 +177,14 @@ class TrackingAlgorithm:
         self.objects[key]['Prob'] = P
 
         # Reset 'Update' parameter of all the actual objects
-        self.objects[key]['Update'] = False
+        #self.objects[key]['Update'] = False
         return r
 
     def tracking_objects(self,box):
 
 
         # Size of the gate to accept a position into an existent object
-        gate = 300
+        gate = 100
 
         # Dictionary for one object
         # Features:
@@ -167,11 +200,15 @@ class TrackingAlgorithm:
         # If it is the first time, a new object has to initialize the dictionary
         if  self.first_time:
             self.first_time = False
-            obj['X'] = x
-            obj['Y'] = y
+            #obj['X'] = x
+            #obj['Y'] = y
+            #obj['vX'] = 0
+            #obj['vY'] = 0
             obj['Prob'] = 0.5
             obj['Update'] = True
-
+            obj['P'] = self.P0
+            zustand = np.array([x, y, 0, 0])
+            obj['State'] = np.expand_dims(zustand,axis = 1)
             # Append the object to the dictionary in the 'consecutive' position
             #self.objects[self.consecutive] = obj
             #self.consecutive = self.consecutive + 1
@@ -186,14 +223,21 @@ class TrackingAlgorithm:
             for key in self.objects.keys():
                 actualX = x
                 actualY = y
-
+                #actualxy = np.array([x,y,self.objects[key]['vX'],self.objects[key]['vY']])
+                #actualxy =np.expand_dims(actualxy,axis = 1)
+                self.objects[key]['State'], self.objects[key]['P'] = self.predictKalman(self.objects[key]['State'], self.objects[key]['P'], self.A, self.Q)
+                print(self.objects[key]['State'][2], self.objects[key]['State'][3])
                 # Calculate the distance between the new measurement and all the saved objects
-                distance = np.sqrt((self.objects[key]['X'] - actualX) ** 2 + (self.objects[key]['Y'] - actualY) ** 2)
+                #distance = np.sqrt((self.objects[key]['X'] - actualX) ** 2 + (self.objects[key]['Y'] - actualY) ** 2)
+                distance = np.sqrt((self.objects[key]['State'][0] - actualX) ** 2 + (self.objects[key]['State'][1] - actualY) ** 2)
 
                 # If the distance is smaller than the gate, the measurement is the new position of the object
                 if distance < gate:
-                    self.objects[key]['X'] = actualX
-                    self.objects[key]['Y'] = actualY
+                    meas = np.array([actualX, actualY])
+                    meas =np.expand_dims(meas,axis = 1)
+                    self.objects[key]['State'], self.objects[key]['P'] = self.updateKalman(self.objects[key]['State'], meas, self.objects[key]['P'], self.H, self.R)
+                    self.objects[key]['State'][0] = actualX
+                    self.objects[key]['State'][1] = actualY
                     self.objects[key]['Update'] = True
                     newObject = False
                     break
@@ -204,10 +248,15 @@ class TrackingAlgorithm:
 
             # Create a new object with the position of the actual measurement
             if newObject:
-                obj['X'] = x
-                obj['Y'] = y
+                #obj['X'] = x
+                #obj['Y'] = y
+                #obj['vX'] = 0
+                #obj['vY'] = 0
                 obj['Prob'] = 0.5
                 obj['Update'] = True
+                obj['P'] = self.P0
+                zustand = np.array([x, y, 0, 0])
+                obj['State'] = np.expand_dims(zustand, axis=1)
                 if not self.discarded:
                     self.objects[self.consecutive] = obj
                     self.consecutive = self.consecutive + 1
@@ -231,6 +280,19 @@ class TrackingAlgorithm:
         img_resized = img_resized.astype(np.float32)
         return img_resized,pil_im
 
+
+    def predictKalman(self,x, P, A, Q):
+        x = A @ x
+        P = A @ P @ A.T + Q
+        return (x, P)
+
+
+    def updateKalman(self,x, z, P, H, R):
+        K = P @ H.T @ inv(H @ P @ H.T + R)
+
+        x = x + K @ (z - H @ x)
+        P = (np.eye(len(x)) - K @ H) @ P
+        return x, P
 
 def colors(classes):
     farbe =dict()
@@ -271,12 +333,16 @@ boxes, inputs = get_boxes_and_inputs_pb(frozenGraph)
 #f.write('X0,Y0,X1,Y1,Indice\n')
 
 tracker = TrackingAlgorithm()
-cap = cv2.VideoCapture('fz2.mp4')
+cap = cv2.VideoCapture('bruecke1.mp4')
 if cap.isOpened():
     window_handle = cv2.namedWindow('Video', cv2.WINDOW_AUTOSIZE)
 
 # While you get something from the camera
 while cv2.getWindowProperty('Video', 0) >= 0:
+    if tracker.first_time == False:
+        tracker.dt =time.time()-previous
+    print(tracker.dt)
+    previous = time.time()
     ret_val, img = cap.read()
 
 
