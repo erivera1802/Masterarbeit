@@ -134,46 +134,45 @@ class TrackingAlgorithm:
         # return only the bounding boxes indexes
         return pick
     # Take the boxes, supress the non_max, draw the boxes and show the images
-    def draw_and_show(self,detections):
+    def draw_and_show(self,detections, image):
         # Do all the processing of the boxes and objects
-
-        img =self.draw_boxes_and_objects(detections)
-        # Draw the line where the objects are counted
-
+        img =self.draw_boxes_and_objects(detections,image)
+        # # Draw the line where the objects are counted
+        #
         img = cv2.line(img, (0, self.roi), (1280, self.roi), (0, 0, 255))
-        # Draw the number of objects
+        # # Draw the number of objects
         img = cv2.putText(img,str(self.counter), org = (0,self.roi),fontFace = cv2.FONT_HERSHEY_SIMPLEX,
-                         color =(255,255,255), fontScale = 3, thickness = 3)
+                          color =(255,255,255), fontScale = 3, thickness = 3)
         #self.writeVideo.write(img)
-
-        cv2.imshow('Image', img)
+        return img
+        #cv2.imshow('Image', img)
 
 #     # Process every detected box, that means: Draw the boxes in the images, and create and update tracked objects
-    def draw_boxes_and_objects(self,detections):
+    def draw_boxes_and_objects(self,detections, img):
         if not self.objects:
             self.first_time = True
-        img = np.zeros((720, 1280,3))
+
         for detection in detections:
-            farb = colors_array[detection.ClassID-1]
-            farb1 = int(farb[0])
-            farb2 = int(farb[1])
-            farb3 = int(farb[2])
-            arr = (farb1,farb2,farb3)
-            img = cv2.rectangle(img, (int(detection.Left), int(detection.Top)), (int(detection.Right),int(detection.Bottom)), arr, 2)
-            img = cv2.putText(img,classesFile[detection.ClassID-1],(int(detection.Left), int(detection.Top)),cv2.FONT_HERSHEY_SIMPLEX, 1, arr)
+            # farb = colors_array[detection.ClassID-1]
+            # farb1 = int(farb[0])
+            # farb2 = int(farb[1])
+            # farb3 = int(farb[2])
+            # arr = (farb1,farb2,farb3)
+            img = cv2.rectangle(img, (int(detection.Left), int(detection.Top)), (int(detection.Right),int(detection.Bottom)), (255,0,0), 2)
+            img = cv2.putText(img,classesFile[detection.ClassID-1],(int(detection.Left), int(detection.Top)),cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0))
             self.tracking_objects(detection.Center)
-        # For all detected objects
+        # # For all detected objects
         if self.objects:
             for key in self.objects.keys():
                 # r is the probability of existence, and it determines the radius of the circle
                 r = int(self.update(key))
                 gate = 100
                 #(key)
-                img =cv2.circle(img,(self.objects[key]['State'][0],self.objects[key]['State'][1]),r,(255, 0, 0),3)
+                #img =cv2.circle(img,(self.objects[key]['State'][0],self.objects[key]['State'][1]),r,(255, 0, 0),3)
                 # Reset 'Update' parameter of all the actual objects
                 if self.objects[key]['Past'] ==False and self.objects[key]['Present'] ==True:
                     self.counter = self.counter+1
-                    img = cv2.line(img, (0, self.roi), (1280, self.roi), (255, 255, 255),3)
+                    #img = cv2.line(img, (0, self.roi), (1280, self.roi), (255, 255, 255),3)
                 self.objects[key]['Past'] = self.objects[key]['Present']
                 self.objects[key]['Update'] = False
             for key in [key for key in self.objects if self.objects[key]['Prob'] < 0.3]:
@@ -349,16 +348,19 @@ colors_array = colors(classesFile)
 camera = jetson.utils.gstCamera(opt.width, opt.height, opt.camera)
 display = jetson.utils.glDisplay()
 tracker = TrackingAlgorithm()
-
+previous = time.time()
 cv2.namedWindow('Image', cv2.WINDOW_NORMAL)
 cv2.resizeWindow('Image', 427, 240)
 # process frames until user exits
 while display.IsOpen():
+
     # capture the image
     img, width, height = camera.CaptureRGBA()
 
     # detect objects in the image (with overlay)
+    previous = time.time()
     detections = net.Detect(img, width, height)
+
     #numpyImg  = jetson.utils.cudaToNumpy(img,width,height,4)
     #print(img)
     # print the detections
@@ -366,8 +368,20 @@ while display.IsOpen():
     # #print("detected {:d} objects in image".format(len(detections)))
     for detection in detections:
         print(detection)
-    tracker.draw_and_show(detections)
+    imag = np.zeros((720, 1280, 3))
+    bild = tracker.draw_and_show(detections, imag)
+    actual = time.time()
+
+    b_channel, g_channel, r_channel = cv2.split(bild)
+
+    alpha_channel = np.ones(b_channel.shape, dtype=b_channel.dtype) * 50  # creating a dummy alpha channel image.
+
+    img_RGBA = cv2.merge((r_channel, g_channel, b_channel, alpha_channel))
+    height, width, channels = img_RGBA.shape
+    img = jetson.utils.cudaFromNumpy(img_RGBA)
+
     # render the image
+
     display.RenderOnce(img, width, height)
 
     # update the title bar
@@ -378,6 +392,7 @@ while display.IsOpen():
     if len(detections) > 0:
         jetson.utils.cudaDeviceSynchronize()
 
+    print(1/(actual-previous))
     # print out performance info
     #net.PrintProfilerTimes()
 
