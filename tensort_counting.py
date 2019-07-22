@@ -139,13 +139,14 @@ class TrackingAlgorithm:
         img =self.draw_boxes_and_objects(detections,image)
         # # Draw the line where the objects are counted
         #
-        img = cv2.line(img, (0, self.roi), (1280, self.roi), (0, 0, 255))
+        img = cv2.line(img, (0, self.roi), (1280, self.roi), (0, 0, 255),3)
         # # Draw the number of objects
         img = cv2.putText(img,str(self.counter), org = (0,self.roi),fontFace = cv2.FONT_HERSHEY_SIMPLEX,
                           color =(255,255,255), fontScale = 3, thickness = 3)
         #self.writeVideo.write(img)
-        return img
         #cv2.imshow('Image', img)
+        return img
+
 
 #     # Process every detected box, that means: Draw the boxes in the images, and create and update tracked objects
     def draw_boxes_and_objects(self,detections, img):
@@ -159,7 +160,9 @@ class TrackingAlgorithm:
             # farb3 = int(farb[2])
             # arr = (farb1,farb2,farb3)
             img = cv2.rectangle(img, (int(detection.Left), int(detection.Top)), (int(detection.Right),int(detection.Bottom)), (255,0,0), 2)
-            img = cv2.putText(img,classesFile[detection.ClassID-1],(int(detection.Left), int(detection.Top)),cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0))
+            #img = cv2.putText(img,classesFile[detection.ClassID-1],(int(detection.Left), int(detection.Top)),cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0))
+            img = cv2.putText(img, str(detection.ClassID), (int(detection.Left), int(detection.Top)),
+                              cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0))
             self.tracking_objects(detection.Center)
         # # For all detected objects
         if self.objects:
@@ -349,41 +352,43 @@ camera = jetson.utils.gstCamera(opt.width, opt.height, opt.camera)
 display = jetson.utils.glDisplay()
 tracker = TrackingAlgorithm()
 previous = time.time()
-cv2.namedWindow('Image', cv2.WINDOW_NORMAL)
-cv2.resizeWindow('Image', 427, 240)
+#cv2.namedWindow('Image', cv2.WINDOW_NORMAL)
+#cv2.resizeWindow('Image', 427, 240)
 # process frames until user exits
 while display.IsOpen():
 
+    previous = time.time()
     # capture the image
-    img, width, height = camera.CaptureRGBA()
+    img, width, height = camera.CaptureRGBA(zeroCopy=1)
 
     # detect objects in the image (with overlay)
-    previous = time.time()
+
     detections = net.Detect(img, width, height)
 
-    #numpyImg  = jetson.utils.cudaToNumpy(img,width,height,4)
+    imag  = jetson.utils.cudaToNumpy(img,width,height,4)
     #print(img)
     # print the detections
     #
     # #print("detected {:d} objects in image".format(len(detections)))
-    for detection in detections:
-        print(detection)
-    imag = np.zeros((720, 1280, 3))
+    #for detection in detections:
+    #    print(detection)
+    #imag = np.zeros((720, 1280, 3))
     bild = tracker.draw_and_show(detections, imag)
-    actual = time.time()
 
-    b_channel, g_channel, r_channel = cv2.split(bild)
+    #bildcuda = jetson.utils.cudaToNumpy(img, width, height, 3)
 
-    alpha_channel = np.ones(b_channel.shape, dtype=b_channel.dtype) * 50  # creating a dummy alpha channel image.
+    #b_channel, g_channel, r_channel, a_channel = cv2.split(bild)
 
-    img_RGBA = cv2.merge((r_channel, g_channel, b_channel, alpha_channel))
-    height, width, channels = img_RGBA.shape
-    img = jetson.utils.cudaFromNumpy(img_RGBA)
+    #alpha_channel = np.ones(b_channel.shape, dtype=b_channel.dtype) * 50  # creating a dummy alpha channel image.
+
+    #img_RGBA = cv2.merge((r_channel, g_channel, b_channel, a_channel))
+    #height, width, channels = img_RGBA.shape
+    #img = jetson.utils.cudaFromNumpy(img_RGBA)
 
     # render the image
 
-    display.RenderOnce(img, width, height)
-
+    # display.RenderOnce(img, width, height)
+    actual = time.time()
     # update the title bar
     display.SetTitle("{:s} | Network {:.0f} FPS".format(opt.network, 1000.0 / net.GetNetworkTime()))
     if cv2.waitKey(1) & 0xFF == ord('q'):
