@@ -134,10 +134,10 @@ class TrackingAlgorithm:
         # return only the bounding boxes indexes
         return pick
     # Take the boxes, supress the non_max, draw the boxes and show the images
-    def draw_and_show(self,detections):
+    def draw_and_show(self,detections, img):
         # Do all the processing of the boxes and objects
 
-        img =self.draw_boxes_and_objects(detections)
+        img =self.draw_boxes_and_objects(detections, img)
         # Draw the line where the objects are counted
 
         img = cv2.line(img, (0, self.roi), (1280, self.roi), (0, 0, 255))
@@ -147,12 +147,12 @@ class TrackingAlgorithm:
         #self.writeVideo.write(img)
 
         cv2.imshow('Video', img)
-
+        return img
 #     # Process every detected box, that means: Draw the boxes in the images, and create and update tracked objects
-    def draw_boxes_and_objects(self,detections):
+    def draw_boxes_and_objects(self,detections, img):
         if not self.objects:
             self.first_time = True
-        img = np.zeros((720, 1280,3))
+        #img = np.zeros((720, 1280,3))
         for detection in detections:
             farb = colors_array[detection.ClassID-1]
             farb1 = int(farb[0])
@@ -347,16 +347,17 @@ colors_array = colors(classesFile)
 
 # create the camera and display
 cap = cv2.VideoCapture('bruecke2.mp4')
-# if cap.isOpened():
-#     window_handle = cv2.namedWindow('Video', cv2.WINDOW_NORMAL)
-#     cv2.resizeWindow('Video', 427, 240)
+if cap.isOpened():
+    window_handle = cv2.namedWindow('Video', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('Video', 427, 240)
 display = jetson.utils.glDisplay()
 tracker = TrackingAlgorithm()
 window_handle = cv2.namedWindow('Video', cv2.WINDOW_NORMAL)
-cv2.resizeWindow('Video', 427, 240)
+cv2.resizeWindow('Video', 640, 360)
 # process frames until user exits
 previous = time.time()
 while cv2.getWindowProperty('Video', 0) >= 0:
+#while display.IsOpen():
     # capture the image
     #img, width, height = camera.CaptureRGBA()
     previous = time.time()
@@ -368,25 +369,26 @@ while cv2.getWindowProperty('Video', 0) >= 0:
 
     img_RGBA = cv2.merge((r_channel, g_channel, b_channel, alpha_channel))
     height, width, channels = img_RGBA.shape
-    img = jetson.utils.cudaFromNumpy(img_RGBA)
+    imague = jetson.utils.cudaFromNumpy(img_RGBA)
 
 
     # detect objects in the image (with overlay)
-    detections = net.Detect(img, width, height)
+    detections = net.Detect(imague, width, height)
 
-    tracker.draw_and_show(detections)
-    # render the image
-    display.RenderOnce(img, width, height)
-
-    # update the title bar
-    display.SetTitle("{:s} | Network {:.0f} FPS".format(opt.network, 1000.0 / net.GetNetworkTime()))
+    bild = tracker.draw_and_show(detections, img)
+    # # render the image
+    #img = jetson.utils.cudaFromNumpy(bild)
+    #display.RenderOnce(imague, width, height)
+    #
+    # # update the title bar
+    #display.SetTitle("{:s} | Network {:.0f} FPS".format(opt.network, 1000.0 / net.GetNetworkTime()))
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
     # synchronize with the GPU
     if len(detections) > 0:
         jetson.utils.cudaDeviceSynchronize()
     actual = time.time()
-    print(actual-previous)
+    print(1/(actual-previous))
     # print out performance info
     #net.PrintProfilerTimes()
 
