@@ -13,7 +13,7 @@ from PIL import ImageDraw, Image
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_string(
-    'class_names', 'coco.names', 'File with class names')
+    'class_names', 'names/coco.names', 'File with class names')
 
 # Function to load the graph from the .pb file
 def get_frozen_graph(graph_file):
@@ -70,10 +70,11 @@ class TrackingAlgorithm:
         self.roi = 300
 
         # Saving
-        #fourcc = cv2.VideoWriter_fourcc(*'MP4V')
-        #self.writeVideo = cv2.VideoWriter('outSSD.mp4', fourcc, 30.0, (1280, 720))
+        fourcc = cv2.VideoWriter_fourcc(*'MP4V')
+        self.writeVideo = cv2.VideoWriter('outSSD_10Fps.mp4', fourcc, 10.0, (1280, 720))
 
     def prepare_image(self, img):
+        cv2_im = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img_resized = cv2.resize(img, (300, 300))
         return img_resized
 
@@ -144,17 +145,29 @@ class TrackingAlgorithm:
         return pick
     # Take the boxes, supress the non_max, draw the boxes and show the images
     def draw_and_show(self,detected_boxes,scores,classes,num_detections,pil_im):
-        # Do all the processing of the boxes and objects
-        img =self.draw_boxes_and_objects(boxes, pil_im, classes, scores, num_detections)
-        # Draw the line where the objects are counted
-        img = cv2.line(img, (0, self.roi), (1280, self.roi), (0, 0, 255))
-        # Draw the number of objects
-        img = cv2.putText(img,str(self.counter), org = (0,self.roi),fontFace = cv2.FONT_HERSHEY_SIMPLEX,
-                         color =(255,255,255), fontScale = 3, thickness = 3)
-        #self.writeVideo.write(img)
-        cv2.imshow('CSI Camera', img)
+        # filtered_boxes = non_max_suppression(detected_boxes,
+        #                                      confidence_threshold=FLAGS.conf_threshold,
+        #                                      iou_threshold=FLAGS.iou_threshold)
 
-#     # Process every detected box, that means: Draw the boxes in the images, and create and update tracked objects
+        #img = np.array(pil_im)
+        #img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        #pick = self.non_max_suppression(boxes_pixels, scores[:num_detections], 0.5)
+        #for i in pick:
+        #    box = boxes_pixels[i]
+        #    box = np.round(box).astype(int)
+            # Draw bounding box.
+            # img = cv2.rectangle(pil_im, (box[1], box[0]), (box[3], box[2]), (0, 255, 0), 2)
+            # img = cv2.putText(img, text, (box[1], box[0] + 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2,
+            #                   cv2.LINE_AA)
+        # img = cv2.putText(img,str(self.counter), org = (0,self.roi),fontFace = cv2.FONT_HERSHEY_SIMPLEX,
+        #                   color =(255,255,255), fontScale = 3, thickness = 3)
+        img =self.draw_boxes_and_objects(boxes, pil_im, classes, scores, num_detections)
+        img = cv2.putText(img,str(self.counter), org = (0,self.roi),fontFace = cv2.FONT_HERSHEY_SIMPLEX,
+                          color =(255,255,255), fontScale = 3, thickness = 3)
+        self.writeVideo.write(img)
+        #cv2.imshow('CSI Camera', img)
+
+    # Process every detected box, that means: Draw the boxes in the images, and create and update tracked objects
     def draw_boxes_and_objects(self,boxes, img, cls_names, scores, num_detections):
         if not self.objects:
             self.first_time = True
@@ -164,13 +177,13 @@ class TrackingAlgorithm:
             box = boxes_pixels[i]
             box = np.round(box).astype(int)
             # Draw bounding box.
-            farb = colors_array[classes[i]]
-            farb1 = int(farb[0])
-            farb2 = int(farb[1])
-            farb3 = int(farb[2])
-            arr = (farb1,farb2,farb3)
-            img = cv2.rectangle(img, (box[1], box[0]), (box[3], box[2]), arr, 2)
-            img = cv2.putText(img,classesFile[classes[i]-1],(box[1], box[0]),cv2.FONT_HERSHEY_SIMPLEX, 1, arr)
+            # farb = colors_array[classes[i]]
+            # farb1 = int(farb[0])
+            # farb2 = int(farb[1])
+            # farb3 = int(farb[2])
+            # arr = (farb1,farb2,farb3)
+            img = cv2.rectangle(img, (box[1], box[0]), (box[3], box[2]), (255,0,0), 2)
+            img = cv2.putText(img,classesFile[classes[i]-1],(box[1], box[0]),cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0))
             self.tracking_objects(box)
         # For all detected objects
         if self.objects:
@@ -180,10 +193,30 @@ class TrackingAlgorithm:
                 gate = 100
                 #(key)
                 img =cv2.circle(img,(self.objects[key]['State'][0],self.objects[key]['State'][1]),r,(255, 0, 0),1)
+                #draw.text((self.objects[key]['State'][0] - 2*r,  self.objects[key]['State'][1] - 2*r), str(key))
+                if self.objects[key]['Update']:
+                    # draw.ellipse((self.objects[key]['State'][0] - r, self.objects[key]['State'][1] - r, self.objects[key]['State'][0] + r,
+                    #               self.objects[key]['State'][1] + r),
+                    #              fill=(255, 0, 0, 255))
+                    img = cv2.circle(img,(self.objects[key]['State'][0],self.objects[key]['State'][1]),r,(255,0,0))
+                else :
+                    img = cv2.circle(img, (self.objects[key]['State'][0], self.objects[key]['State'][1]), r,
+                                     (255, 255, 0))
+                #     draw.ellipse((self.objects[key]['State'][0] - r, self.objects[key]['State'][1] - r, self.objects[key]['State'][0] + r,
+                #                   self.objects[key]['State'][1] + r),
+                #                  fill=(255, 255, 0, 50))
+                #     draw.ellipse((self.objects[key]['State'][0] - gate, self.objects[key]['State'][1] - gate,
+                #                   self.objects[key]['State'][0] + gate,
+                #                   self.objects[key]['State'][1] + gate))
+                img =cv2.line(img,(0, self.roi), (1280, self.roi),(0,0,255))
+                #print(len(self.objects),self.objects[key]['Update'])
+                #if self.objects[key]['Prob'] < 0.2:
+                #    del self.objects[key]
+                #    self.discarded.append(key)
                 # Reset 'Update' parameter of all the actual objects
                 if self.objects[key]['Past'] ==False and self.objects[key]['Present'] ==True:
                     self.counter = self.counter+1
-                    img = cv2.line(img, (0, self.roi), (1280, self.roi), (255, 255, 255),3)
+                    img = cv2.line(img, (0, self.roi), (1280, self.roi), (255, 0, 0))
                 self.objects[key]['Past'] = self.objects[key]['Present']
                 self.objects[key]['Update'] = False
             for key in [key for key in self.objects if self.objects[key]['Prob'] < 0.3]:
@@ -203,6 +236,12 @@ class TrackingAlgorithm:
             self.objects[key]['State'], self.objects[key]['P'] = self.predictKalman(self.objects[key]['State'],
                                                                                     self.objects[key]['P'], self.A,
                                                                                     self.Q)
+        #     self.objects[key]['State'], self.objects[key]['P'] = self.predictKalman(self.objects[key]['State'], self.objects[key]['P'],
+        #                                                                         self.A, self.Q)
+        #     self.objects[key]['X'] = self.objects[key]['State'][0]
+        #     self.objects[key]['Y'] = self.objects[key]['State'][1]
+        #     self.objects[key]['vX'] = self.objects[key]['State'][2]
+        #     self.objects[key]['vY'] = self.objects[key]['State'][3]
         # Binary Bayes Filter
         l = np.log(sensor / (1 - sensor))
         l_past = np.log(self.objects[key]['Prob'] / (1 - self.objects[key]['Prob']))
@@ -214,14 +253,18 @@ class TrackingAlgorithm:
 
         # Get the probability of existence of the box
         P = 1 - 1 / (1 + np.exp(L))
+        #print(P, L, l, l_past)
 
         # Radius of the ellipse
         r = 15 * P
 
         # Update object probability
         self.objects[key]['Prob'] = P
+
+        # Reset 'Update' parameter of all the actual objects
+        #self.objects[key]['Update'] = False
         return r
-#
+
     def tracking_objects(self,box):
         # Size of the gate to accept a position into an existent object
         gate = 50
@@ -240,6 +283,10 @@ class TrackingAlgorithm:
         # If it is the first time, a new object has to initialize the dictionary
         if  self.first_time:
             self.first_time = False
+            #obj['X'] = x
+            #obj['Y'] = y
+            #obj['vX'] = 0
+            #obj['vY'] = 0
             obj['Prob'] = 0.5
             obj['Update'] = True
             obj['P'] = self.P0
@@ -251,7 +298,9 @@ class TrackingAlgorithm:
             else:
                 obj['Past'] = True
                 obj['Present'] = True
-
+            # Append the object to the dictionary in the 'consecutive' position
+            #self.objects[self.consecutive] = obj
+            #self.consecutive = self.consecutive + 1
             if not self.discarded:
                 self.objects[self.consecutive] = obj
                 self.consecutive = self.consecutive + 1
@@ -263,13 +312,27 @@ class TrackingAlgorithm:
             for key in self.objects.keys():
                 actualX = x
                 actualY = y
+                #actualxy = np.array([x,y,self.objects[key]['vX'],self.objects[key]['vY']])
+                #actualxy =np.expand_dims(actualxy,axis = 1)
+                self.objects[key]['State'], self.objects[key]['P'] = self.predictKalman(self.objects[key]['State'], self.objects[key]['P'], self.A, self.Q)
+                #print(self.objects[key]['State'][2], self.objects[key]['State'][3])
+                # Calculate the distance between the new measurement and all the saved objects
+                #distance = np.sqrt((self.objects[key]['X'] - actualX) ** 2 + (self.objects[key]['Y'] - actualY) ** 2)
                 distance = np.sqrt((self.objects[key]['State'][0] - actualX) ** 2 + (self.objects[key]['State'][1] - actualY) ** 2)
 
                 # If the distance is smaller than the gate, the measurement is the new position of the object
                 if distance < gate:
-                    meas = np.array([actualX, actualY, 0, 0])
+                    #meas = np.array([actualX, actualY, 0, 0])
+                    meas = np.array([actualX, actualY])
                     meas =np.expand_dims(meas,axis = 1)
-                    self.objects[key]['State'] = meas
+                    # print(self.objects[key]['State'].shape)
+                    # print(meas.shape)
+                    # print(self.H.shape)
+                    self.objects[key]['State'], self.objects[key]['P'] = self.updateKalman(self.objects[key]['State'], meas, self.objects[key]['P'], self.H, self.R)
+
+                    #self.objects[key]['State'] = meas
+                    #self.objects[key]['State'][0] = actualX
+                    #self.objects[key]['State'][1] = actualY
                     if self.objects[key]['State'][1] < self.roi:
                         self.objects[key]['Present'] = False
                     else:
@@ -284,6 +347,10 @@ class TrackingAlgorithm:
 
             # Create a new object with the position of the actual measurement
             if newObject:
+                #obj['X'] = x
+                #obj['Y'] = y
+                #obj['vX'] = 0
+                #obj['vY'] = 0
                 obj['Prob'] = 0.5
                 obj['Update'] = True
                 obj['P'] = self.P0
@@ -309,9 +376,9 @@ class TrackingAlgorithm:
         x = box[1]+width/2
         y = box[0]+height/2
         return x,y
-#
-#     # # Function to change from cv2 to pil and resizing
-#
+
+    # # Function to change from cv2 to pil and resizing
+
     def predictKalman(self,x, P, A, Q):
         x = A @ x
         P = A @ P @ A.T + Q
@@ -320,7 +387,7 @@ class TrackingAlgorithm:
 
     def updateKalman(self,x, z, P, H, R):
         K = P @ H.T @ inv(H @ P @ H.T + R)
-
+        print(x.shape,K.shape,z.shape,H.shape)
         x = x + K @ (z - H @ x)
         P = (np.eye(len(x)) - K @ H) @ P
         return x, P
@@ -333,12 +400,10 @@ def colors(classes):
 
 # Load the classes file and the graph
 classesFile = load_coco_names(FLAGS.class_names)
-pb_fname = "./models/trt_graph_test.pb"
+pb_fname = "./model/coco_vehicle_90k.pb"
 print('Loading graph')
-sta = time.time()
 frozenGraph = get_frozen_graph(pb_fname)
-sto = time.time()
-print(sto-sta)
+
 colors_array = colors(classesFile)
 
 # Prepare the cv2 window
@@ -368,19 +433,18 @@ tf_num_detections = tf_sess.graph.get_tensor_by_name('prefix/num_detections:0')
 #f.write('X0,Y0,X1,Y1,Indice\n')
 
 tracker = TrackingAlgorithm()
-cap = cv2.VideoCapture('bruecke2.mp4')
-if cap.isOpened():
-    window_handle = cv2.namedWindow('Video', cv2.WINDOW_AUTOSIZE)
-previous = time.time()
+cap = cv2.VideoCapture('bruecke10.mp4')
+# if cap.isOpened():
+#     window_handle = cv2.namedWindow('Video', cv2.WINDOW_AUTOSIZE)
+
 print(cap.get(3), cap.get(4))
 # While you get something from the camera
-while cv2.getWindowProperty('Video', 0) >= 0:
-#while True:
-    #if tracker.first_time == False:
-    #tracker.dt =time.time()-previous
-    #print('Time')
-    #print(1/tracker.dt)
-
+#while cv2.getWindowProperty('Video', 0) >= 0:
+while True:
+    if tracker.first_time == False:
+        tracker.dt =time.time()-previous
+    print('Time')
+    print(tracker.dt)
     previous = time.time()
     ret_val, img = cap.read()
 
@@ -389,12 +453,10 @@ while cv2.getWindowProperty('Video', 0) >= 0:
     num_rows, num_cols = img.shape[:2]
     rotation_matrix = cv2.getRotationMatrix2D((num_cols / 2, num_rows / 2), 180, 1)
     #img = cv2.warpAffine(img, rotation_matrix, (num_cols, num_rows))
-    #img_resized = cv2.resize(img, (300, 300))
     img_resized = tracker.prepare_image(img)
     # Run the network
     scores, boxes, classes, num_detections = tf_sess.run([tf_scores, tf_boxes,tf_classes, tf_num_detections],
                                                          feed_dict={tf_input: img_resized[None, ...]})
-
     boxes = boxes[0]  # index by 0 to remove batch dimension
     scores = scores[0]
     classes = classes[0]
@@ -409,9 +471,7 @@ while cv2.getWindowProperty('Video', 0) >= 0:
 
     # Show the detected image and process tracking
     tracker.draw_and_show(boxes_pixels,scores,classes,num_detections,img)
-    actual = time.time()
-    print(1/(actual-previous))
-    #tracker.count = tracker.count + 1
+    # tracker.count = tracker.count + 1
 
     # Check if the window should be closed
     keyCode = cv2.waitKey(30) & 0xff
