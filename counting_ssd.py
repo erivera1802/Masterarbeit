@@ -71,7 +71,7 @@ class TrackingAlgorithm:
 
         # Saving
         #fourcc = cv2.VideoWriter_fourcc(*'MP4V')
-        #self.writeVideo = cv2.VideoWriter('outSSD.mp4', fourcc, 30.0, (1280, 720))
+        #self.writeVideo = cv2.VideoWriter('outSSD_live.mp4', fourcc, 30.0, (1280, 720))
 
     def prepare_image(self, img):
         img_resized = cv2.resize(img, (300, 300))
@@ -341,7 +341,7 @@ cap = cv2.VideoCapture(gstreamer_pipeline(flip_method=2), cv2.CAP_GSTREAMER)
 if cap.isOpened():
    window_handle = cv2.namedWindow('CSI Camera', cv2.WINDOW_AUTOSIZE)
 classesFile = load_coco_names(FLAGS.class_names)
-pb_fname = "./models/trt_graph_test.pb"
+pb_fname = "./models/trt_graph_ssd_mobilenet_v2_coco.pb"
 print('Loading graph')
 sta = time.time()
 frozenGraph = get_frozen_graph(pb_fname)
