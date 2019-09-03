@@ -71,7 +71,7 @@ class TrackingAlgorithm:
 
         # Saving
         fourcc = cv2.VideoWriter_fourcc(*'MP4V')
-        self.writeVideo = cv2.VideoWriter('outSSD_Polen_Improved.mp4', fourcc, 11.0, (widthInput, heightInput))
+        self.writeVideo = cv2.VideoWriter('outSSD_Salitre3.mp4', fourcc, 11.0, (widthInput, heightInput))
 
     def prepare_image(self, img):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -175,10 +175,7 @@ class TrackingAlgorithm:
             for key in self.objects.keys():
                 # r is the probability of existence, and it determines the radius of the circle
                 r = int(self.update(key))
-                gate = 100
-                #(key)
                 img =cv2.circle(img,(self.objects[key]['State'][0],self.objects[key]['State'][1]),r,(255, 0, 0),1)
-                #draw.text((self.objects[key]['State'][0] - 2*r,  self.objects[key]['State'][1] - 2*r), str(key))
                 if self.objects[key]['Update']:
                     img = cv2.circle(img,(self.objects[key]['State'][0],self.objects[key]['State'][1]),r,(255,0,0))
                 else :
@@ -252,10 +249,6 @@ class TrackingAlgorithm:
         # If it is the first time, a new object has to initialize the dictionary
         if  self.first_time:
             self.first_time = False
-            #obj['X'] = x
-            #obj['Y'] = y
-            #obj['vX'] = 0
-            #obj['vY'] = 0
             obj['Prob'] = 0.5
             obj['Update'] = True
             obj['P'] = self.P0
@@ -270,8 +263,6 @@ class TrackingAlgorithm:
                 obj['Past'] = True
                 obj['Present'] = True
             # Append the object to the dictionary in the 'consecutive' position
-            #self.objects[self.consecutive] = obj
-            #self.consecutive = self.consecutive + 1
             if not self.discarded:
                 self.objects[self.consecutive] = obj
                 self.consecutive = self.consecutive + 1
@@ -283,15 +274,12 @@ class TrackingAlgorithm:
             for key in self.objects.keys():
                 actualX = x
                 actualY = y
-                #actualxy = np.array([x,y,self.objects[key]['vX'],self.objects[key]['vY']])
-                #actualxy =np.expand_dims(actualxy,axis = 1)
                 self.objects[key]['State'], self.objects[key]['P'] = self.predictKalman(self.objects[key]['State'], self.objects[key]['P'], self.A, self.Q)
                 # Calculate the distance between the new measurement and all the saved objects
                 distance = np.sqrt((self.objects[key]['State'][0] - actualX) ** 2 + (self.objects[key]['State'][1] - actualY) ** 2)
 
                 # If the distance is smaller than the gate, the measurement is the new position of the object
                 if distance < gate:
-                    #meas = np.array([actualX, actualY, 0, 0])
                     meas = np.array([actualX, actualY])
                     meas =np.expand_dims(meas,axis = 1)
 
@@ -372,10 +360,6 @@ sto = time.time()
 print(sto-sta)
 colors_array = colors(classesFile)
 
-# Prepare the cv2 window
-#if cap.isOpened():
-#    window_handle = cv2.namedWindow('CSI Camera', cv2.WINDOW_AUTOSIZE)
-
 # Create session and load graph
 # Configure the tensorflow session, especially with allow_growth, so it doesnt fails to get memory
 gpu_options = tf.GPUOptions(allow_growth=True)
@@ -394,12 +378,7 @@ tf_boxes = tf_sess.graph.get_tensor_by_name('prefix/detection_boxes:0')
 tf_classes = tf_sess.graph.get_tensor_by_name('prefix/detection_classes:0')
 tf_num_detections = tf_sess.graph.get_tensor_by_name('prefix/num_detections:0')
 
-# Saving data to debug ant test algorithms
-#f = open('data.txt','w')
-#f.write('X0,Y0,X1,Y1,Indice\n')
-
-
-cap = cv2.VideoCapture('videos/TrafficCameraYoutube_10.mp4')
+cap = cv2.VideoCapture('videos/Salitre3_10.mp4')
 print(cap.get(3), cap.get(4))
 widthInput = int(cap.get(3))
 heightInput = int(cap.get(4))
@@ -410,21 +389,19 @@ previous = time.time()
 
 # While you get something from the camera
 while cv2.getWindowProperty('Video', 0) >= 0:
-#while True:
-    #if tracker.first_time == False:
-    #tracker.dt =time.time()-previous
-    #print('Time')
-    #print(1/tracker.dt)
 
     previous = time.time()
     ret_val, img = cap.read()
-
-
+    # Check if the window should be closed
+    keyCode = cv2.waitKey(30) & 0xff
+    # Stop the program on the ESC key
+    if keyCode == 27 or ret_val == False:
+        break
+        cap.release()
+        cv2.destroyAllWindows()
     # Prepare the image
     num_rows, num_cols = img.shape[:2]
     rotation_matrix = cv2.getRotationMatrix2D((num_cols / 2, num_rows / 2), 180, 1)
-    #img = cv2.warpAffine(img, rotation_matrix, (num_cols, num_rows))
-    #img_resized = cv2.resize(img, (300, 300))
     img_resized = tracker.prepare_image(img)
     # Run the network
     previous1 = time.time()
@@ -450,14 +427,9 @@ while cv2.getWindowProperty('Video', 0) >= 0:
 
     #tracker.count = tracker.count + 1
 
-    # Check if the window should be closed
-    keyCode = cv2.waitKey(30) & 0xff
 
-    # Stop the program on the ESC key
-    if keyCode == 27:
-        break
-        cap.release()
-        cv2.destroyAllWindows()
+
+
     print(actual1 - previous1)
     print(actual - previous)
     print(1 / (actual - previous))
